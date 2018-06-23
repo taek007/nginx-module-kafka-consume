@@ -1,1 +1,3 @@
-
+./configure --add-module=/home/zzh/nginx-module-kafka-hight/ --prefix=/usr/local/nginx_kafka4 && make && make install
+make&& make install
+curl "http://10.99.1.148:8029/test"
