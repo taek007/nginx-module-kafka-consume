@@ -9,8 +9,10 @@
 int run = 1;
 //extern rd_kafka_topic_partition_list_t* topics; 
 
-
-
+static ngx_int_t ngx_http_key_index;
+static ngx_str_t ngx_http_key_value = ngx_string("topic_name");
+ngx_http_variable_value_t *key_vv;
+ngx_int_t ngx_http_hi_module_init(ngx_conf_t *cf);
 
 static ngx_command_t ngx_http_kafka_commands[] = {
     {
@@ -32,7 +34,7 @@ static ngx_command_t ngx_http_kafka_commands[] = {
 
 static ngx_http_module_t ngx_http_kafka_module_ctx = {
     NULL,
-    NULL,
+    ngx_http_hi_module_init,  /* postconfiguration 从配置文件中读取key定义 */
 
     ngx_http_kafka_create_main_conf,      
     NULL,
@@ -43,6 +45,38 @@ static ngx_http_module_t ngx_http_kafka_module_ctx = {
     ngx_http_kafka_create_loc_conf,
     NULL,
 };
+
+
+
+static ngx_int_t ngx_http_hi_module_variable_not_found(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data)
+{
+    v->not_found = 1;
+    return NGX_OK;
+}
+
+static ngx_int_t ngx_http_hi_module_add_variable(ngx_conf_t *cf, ngx_str_t *name) {
+    ngx_http_variable_t         *v;
+    v = ngx_http_add_variable(cf, name, NGX_HTTP_VAR_CHANGEABLE);
+    if (v == NULL) {
+        return NGX_ERROR;
+    }
+ 
+    v->get_handler = ngx_http_hi_module_variable_not_found;
+    return ngx_http_get_variable_index(cf, name);
+}
+
+ngx_int_t ngx_http_hi_module_init(ngx_conf_t *cf){
+    printf("called:ngx_http_hi_module_init\n");
+    // 读key参数
+    if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+        return NGX_ERROR;
+    }
+    return NGX_OK;
+}
+
+
+
+
 
 ngx_module_t ngx_http_kafka_module = {
     NGX_MODULE_V1,
@@ -145,7 +179,13 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (clcf == NULL) {
         return NGX_CONF_ERROR;
     }
+ if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+        return NGX_CONF_ERROR;
+    }
+//    return NGX_OK;
     clcf->handler = ngx_http_kafka_handler;
+	
+//	ngx_http_hi_module_init(cf);
 
     if (ngx_conf_set_str_slot(cf, cmd, conf) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
@@ -241,13 +281,52 @@ void ngx_http_kafka_post_callback_handler(ngx_http_request_t *request) {
 	}
 }
 
+
+ 
+
+
+
+
+
+
+
 /*
 每一个location 对应的handler 中 将topic放进去
 local_conf里的init 是个开关, 初始值为0, 第一个请求过来时设置为1, 这样不用每次绑定topic了
 */
 static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 
+    key_vv = ngx_http_get_indexed_variable(request, ngx_http_key_index);
+	fprintf(stderr, "key is %s\n", key_vv->data);
 	ngx_http_kafka_loc_conf_t       *localConf;
+
+//	ngx_str_t topic; 
+//	char* topic_name = (char*)malloc(sizeof(char)* strlen("topic_name"));
+//	memset(topic_name, 0, 4);
+//	 if (ngx_http_arg(request,(u_char *) "topic_name", strlen("topic_name"), &topic) != NGX_OK) {
+//	return NGX_HTTP_FORBIDDEN;
+//    }
+//
+//	memcpy(topic_name, topic.data, 4);
+//	fprintf(stderr, "%s\n",topic_name);
+//	fprintf(stderr, "%s\n", topic.data);
+//	
+//	ngx_int_t index_1;
+//
+//	u_char ngx_string[1024]={0};    //存储返回的字符串
+//    ngx_http_variable_value_t *value;
+//	
+//    value = ngx_http_get_indexed_variable(request,index);
+//    if (value == NULL || value->not_found){
+//        ngx_sprintf(ngx_string,"value is not exsit!");
+//    }
+//    else {
+//        ngx_sprintf(ngx_string,"value:%s",value->data);
+//    }
+
+
+
+
 //	ngx_http_kafka_main_conf_t    *mainConf;
 	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
 	//int ret;
