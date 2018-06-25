@@ -29,6 +29,14 @@ static ngx_command_t ngx_http_kafka_commands[] = {
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_kafka_loc_conf_t, topic),
         NULL },
+		
+		 {
+        ngx_string("kafka.set_topic"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_http_set_kafka_set_topic,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_kafka_loc_conf_t, topic),
+        NULL },
     ngx_null_command
 };
 
@@ -198,6 +206,74 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
+
+static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
+	key_vv = ngx_http_get_indexed_variable(request, ngx_http_key_index);
+	 char* topic_name = NULL;
+	topic_name = (char*)key_vv->data;
+	fprintf(stderr, "new key is %s\n", topic_name);
+		
+
+			ngx_http_kafka_main_conf_t    *mainConf;
+		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
+//	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
+	//int ret;
+		
+		rd_kafka_topic_partition_list_t *topics;  
+	topics = rd_kafka_topic_partition_list_new(1);  
+if(topics == NULL){
+	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
+} else {
+	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
+}
+		//把Topic+Partition加入list  
+//		char* topic="test2";
+		rd_kafka_topic_partition_list_add(topics, topic_name, -1);
+		
+
+		rd_kafka_resp_err_t err;
+		if((err = rd_kafka_subscribe(mainConf->rk, topics))){  
+			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
+			return -1;  
+		} else {
+			fprintf(stderr, "rd_kafka_subscribe ok\n");
+		}
+
+		rd_kafka_poll_set_consumer(mainConf->rk);  
+
+	return NGX_DONE;
+}
+
+char *ngx_http_set_kafka_set_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+	fprintf(stderr, "999999999999999999999999999\n");
+
+    ngx_http_core_loc_conf_t   *clcf;
+//    ngx_http_kafka_loc_conf_t  *local_conf;
+
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    if (clcf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+ if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+        return NGX_CONF_ERROR;
+    }
+//    return NGX_OK;
+    clcf->handler = ngx_http_kafka_handler_set;
+	
+//	ngx_http_hi_module_init(cf);
+
+    if (ngx_conf_set_str_slot(cf, cmd, conf) != NGX_CONF_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+//    local_conf = conf;
+//
+//    local_conf->rktc = rd_kafka_topic_conf_new();
+
+    return NGX_CONF_OK;
+}
+
 void msg_consume (rd_kafka_message_t *rkmessage, void *opaque) {
 	ngx_http_request_t* request = (ngx_http_request_t*)opaque;
 	char* res = NULL;
@@ -297,7 +373,9 @@ local_conf里的init 是个开关, 初始值为0, 第一个请求过来时设置
 static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 
     key_vv = ngx_http_get_indexed_variable(request, ngx_http_key_index);
-	fprintf(stderr, "key is %s\n", key_vv->data);
+	 char* topic_name = NULL;
+	topic_name = (char*)key_vv->data;
+	fprintf(stderr, " key is %s\n", topic_name);
 	ngx_http_kafka_loc_conf_t       *localConf;
 
 //	ngx_str_t topic; 
@@ -328,14 +406,43 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 
 
 //	ngx_http_kafka_main_conf_t    *mainConf;
-	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
-	//int ret;
+//		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
+localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
+//	//int ret;
+//		
+//		
+//			topics = rd_kafka_topic_partition_list_new(1);  
+//if(topics == NULL){
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
+//} else {
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
+//}
+//		//把Topic+Partition加入list  
+////		char* topic="test2";
+//		rd_kafka_topic_partition_list_add(topics, topic_name, -1);
+//		
+//
+//		rd_kafka_resp_err_t err;
+//		if((err = rd_kafka_subscribe(mainConf->rk, topics))){  
+//			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
+//			return -1;  
+//		} else {
+//			fprintf(stderr, "rd_kafka_subscribe ok\n");
+//		}
+//
+//		rd_kafka_poll_set_consumer(mainConf->rk);  
+
+
 	if (localConf->init == 0) {
+
+			
+
+
 	//	const char* topic = NULL;
 	//	topic = (const char *)localConf->topic.data;
 	//	ngx_log_error(NGX_LOG_ERR , request->connection->log, 0, "topic is %s\n", topic);
 
-	//	mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
+	//
 
 //		localConf->rkt = rd_kafka_topic_new(mainConf->rk, topic, localConf->rktc);
 
@@ -535,32 +642,51 @@ ngx_int_t ngx_http_kafka_init_worker(ngx_cycle_t *cycle) {
 		fprintf(stderr, "rd_kafka_brokers_add ok 11111111111111\n");
 	}
 
-		
-		rd_kafka_poll_set_consumer(main_conf->rk);  
+//		rd_kafka_topic_partition_list_t *topics;  
+//			topics = rd_kafka_topic_partition_list_new(1);  
+//if(topics == NULL){
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
+//} else {
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
+//}
+//		//把Topic+Partition加入list  
+//		char* topic="test2";
+//		rd_kafka_topic_partition_list_add(topics, topic, -1);
+//		
+//
+//		rd_kafka_resp_err_t err;
+//		if((err = rd_kafka_subscribe(main_conf->rk, topics))){  
+//			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
+//			return -1;  
+//		} else {
+//			fprintf(stderr, "rd_kafka_subscribe ok\n");
+//		}
+//
+//		rd_kafka_poll_set_consumer(main_conf->rk);  
 
 
 				//创建一个Topic+Partition的存储空间(list/vector)  
 	//	rd_kafka_topic_partition_list_t *topics2;
-	rd_kafka_topic_partition_list_t *topics;  
-		topics = rd_kafka_topic_partition_list_new(1);  
-if(topics == NULL){
-	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
-} else {
-	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
-}
+
+//		topics = rd_kafka_topic_partition_list_new(1);  
+//if(topics == NULL){
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
+//} else {
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
+//}
 
 		//把Topic+Partition加入list  
-		char* topic="test2";
-		rd_kafka_topic_partition_list_add(topics, topic, -1);
+//		char* topic="test2";
+//		rd_kafka_topic_partition_list_add(topics, topic, -1);
 		
 		//开启consumer订阅，匹配的topic将被添加到订阅列表中  
-		rd_kafka_resp_err_t err;
-		if((err = rd_kafka_subscribe(main_conf->rk, topics))){  
-			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
-			return -1;  
-		} else {
-			fprintf(stderr, "rd_kafka_subscribe ok\n");
-		}
+//		rd_kafka_resp_err_t err;
+//		if((err = rd_kafka_subscribe(main_conf->rk, topics))){  
+//			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
+//			return -1;  
+//		} else {
+//			fprintf(stderr, "rd_kafka_subscribe ok\n");
+//		}
 
 	//rd_kafka_conf_set(main_conf->rkc, "auto.offset.reset", "RD_KAFKA_OFFSET_STORED", NULL, 0);
 

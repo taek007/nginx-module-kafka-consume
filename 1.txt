@@ -3,3 +3,11 @@ make&& make install
 
 curl "http://10.99.1.148:8029/test?name=def&topic_name=abc"
 
+
+注册topic
+curl "http://10.99.1.148:8029/register_topic?topic_name=test2"
+
+https://blog.csdn.net/qinyushuang/article/details/44811519
+http://openplatform-sohu-com.iteye.com/blog/642903
+https://blog.csdn.net/fly_leopard/article/details/55261011
+

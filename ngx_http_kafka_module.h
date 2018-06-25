@@ -38,6 +38,7 @@ typedef struct {
 
 } ngx_http_kafka_loc_conf_t;
 
+char *ngx_http_set_kafka_set_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char g_broker_list[KAFKA_BROKER_MAXLEN * 2];
 static ngx_int_t ngx_http_kafka_init_worker(ngx_cycle_t *cycle);
 static void ngx_http_kafka_exit_worker(ngx_cycle_t *cycle);
