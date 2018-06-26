@@ -133,6 +133,36 @@ void *ngx_http_kafka_create_main_conf(ngx_conf_t *cf)
     return conf;
 }
 
+static ngx_int_t ngx_http_hello_world_init_shm_zone(ngx_shm_zone_t *shm_zone, void *data){
+  ngx_slab_pool_t *shpool;
+  ngx_http_hello_world_shm_count_t *shm_count;
+  if(data){ 
+    shm_zone->data = data;
+    return NGX_OK;
+  }
+  shpool = (ngx_slab_pool_t *)shm_zone->shm.addr;
+  shm_count = ngx_slab_alloc(shpool, sizeof *shm_count);
+  shm_count->count = 0;
+//  shm_count->rk = ( rd_kafka_t  **) malloc(sizeof( rd_kafka_t* )* 5);
+//  shm_count->rkc = ( rd_kafka_conf_t  **) malloc(sizeof( rd_kafka_conf_t* )* 5);
+
+
+   shm_count->multi_rdkafka = ngx_slab_alloc(shpool, sizeof( ngx_multi_rdkafka** ));
+   int i;
+   for(i=0; i< 8;i++){
+		shm_count->multi_rdkafka[i] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* )+50);
+   }
+//     shm_count->rk[0] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ));
+//     shm_count->rk[1] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ));
+//
+//      shm_count->rkc = ngx_slab_alloc(shpool, sizeof( rd_kafka_conf_t** ));
+//shm_count->rkc[0] = ngx_slab_alloc(shpool, sizeof( rd_kafka_conf_t* ) );
+//shm_count->rkc[1] = ngx_slab_alloc(shpool, sizeof( rd_kafka_conf_t* ) );
+
+  shm_zone->data = shm_count;
+  return NGX_OK;
+}
+
 void *ngx_http_kafka_create_loc_conf(ngx_conf_t *cf)
 {
     ngx_http_kafka_loc_conf_t  *conf;
@@ -144,6 +174,21 @@ void *ngx_http_kafka_create_loc_conf(ngx_conf_t *cf)
     conf->log = cf->log;
     ngx_str_null(&conf->topic);
     ngx_str_null(&conf->broker);
+
+	  ngx_shm_zone_t *shm_zone;
+  ngx_str_t *shm_name;
+  shm_name = ngx_palloc(cf->pool, sizeof *shm_name);
+  shm_name->len = sizeof("shared_memory") - 1;
+  shm_name->data = (unsigned char *) "shared_memory";
+  shm_zone = ngx_shared_memory_add(cf, shm_name, 8 * ngx_pagesize, &ngx_http_kafka_module);
+
+  if(shm_zone == NULL){
+    return NGX_CONF_ERROR;
+  }
+
+  shm_zone->init = ngx_http_hello_world_init_shm_zone;
+  conf->shm_zone = shm_zone;
+
 
     return conf;
 }
@@ -212,34 +257,178 @@ static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
 	 char* topic_name = NULL;
 	topic_name = (char*)key_vv->data;
 	fprintf(stderr, "new key is %s\n", topic_name);
-		
 
-			ngx_http_kafka_main_conf_t    *mainConf;
-		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
-//	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
-	//int ret;
-		
-		rd_kafka_topic_partition_list_t *topics;  
+//	rd_kafka_t * shm_rk;
+	//rd_kafka_conf_t * shm_rkc;
+	ngx_int_t rc;
+	ngx_buf_t* b;
+	ngx_chain_t out;
+	
+	ngx_http_kafka_loc_conf_t    *localConf;
+	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
+	ngx_shm_zone_t *shm_zone;
+
+	if(localConf->shm_zone == NULL){
+		fprintf(stderr,"%s\n", "localConf->shm_zone == NULL");
+		return NGX_DECLINED;
+	} else {
+		fprintf(stderr,"%s\n", "localConf->shm_zone != NULL");
+	}
+
+    rd_kafka_conf_t  *rkc = rd_kafka_conf_new();
+	
+	char*	group = "test2";  
+	char	errstr[512];  
+
+	if (rd_kafka_conf_set(rkc, "group.id", group,  errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
+		fprintf(stderr, "%% %s\n", errstr);  
+		return -1;  
+	} else {
+		fprintf(stderr, "rd_kafka_conf_set group.id ok11111\n");  
+	}
+
+	rd_kafka_topic_conf_t *topic_conf;  
+	topic_conf = rd_kafka_topic_conf_new();  
+	if (rd_kafka_topic_conf_set(topic_conf, "offset.store.method",  "broker",  errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
+		  fprintf(stderr, "%% %s\n", errstr);  
+		  return -1;  
+	}  
+	rd_kafka_conf_set_default_topic_conf(rkc, topic_conf);  
+
+	rd_kafka_t *rk = rd_kafka_new(RD_KAFKA_CONSUMER, rkc, NULL, 0);
+
+	if (rd_kafka_brokers_add(rk, g_broker_list) == 0){  
+		fprintf(stderr, "No valid brokers specified\n");
+	} else {
+		fprintf(stderr, "rd_kafka_brokers_add ok 11111111111111\n");
+	}
+	
+
+
+
+	rd_kafka_topic_partition_list_t *topics;  
 	topics = rd_kafka_topic_partition_list_new(1);  
-if(topics == NULL){
-	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
-} else {
-	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
-}
+	if(topics == NULL){
+		fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
+	} else {
+		fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
+	}
 		//把Topic+Partition加入list  
 //		char* topic="test2";
 		rd_kafka_topic_partition_list_add(topics, topic_name, -1);
 		
 
 		rd_kafka_resp_err_t err;
-		if((err = rd_kafka_subscribe(mainConf->rk, topics))){  
+		if((err = rd_kafka_subscribe(rk, topics))){  
 			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
 			return -1;  
 		} else {
 			fprintf(stderr, "rd_kafka_subscribe ok\n");
 		}
 
-		rd_kafka_poll_set_consumer(mainConf->rk);  
+		rd_kafka_poll_set_consumer(rk);  
+
+
+		shm_zone = localConf->shm_zone;
+		
+	
+		int count;
+		count = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count;
+		
+//  ngx_slab_pool_t *shpool;
+// shpool = (ngx_slab_pool_t *)shm_zone->shm.addr;
+//		shm_zone->data->multi_rdkafka[count] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ) + strlen(topic_name));
+//	shm_zone->data->multi_rdkafka[count].rk =  rk;
+
+	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->rk  = rk;
+
+		memcpy(	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->topic, topic_name, strlen(topic_name));
+count = count+1;
+((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count = count;
+		if(strstr(topic_name, "test")) {
+//						ngx_http_kafka_main_conf_t    *mainConf;
+						
+//		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
+//mainConf->rk = rk;
+//			shm_rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0];
+////			memcpy(shm_rk, rk, sizeof(rd_kafka_t*));
+//		  shm_rk =rk;
+//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0] = shm_rk;
+//
+//			shm_rkc = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[0];
+//			memcpy(shm_rkc, rkc, sizeof(rd_kafka_conf_t*));
+//			//shm_rkc =rkc;
+//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[0] = shm_rkc;
+		}else {
+//			shm_rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[1];
+//			memcpy(shm_rk, rk, sizeof(rd_kafka_t*));
+//		//  shm_rk =rk;
+//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[1] = shm_rk;
+//
+//			shm_rkc = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[1];
+//			memcpy(shm_rkc, rkc, sizeof(rd_kafka_conf_t*));
+//			//shm_rkc =rkc;
+//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[1] = shm_rkc;
+		}
+	
+	//int ret;
+		
+
+
+
+  request->headers_out.content_type.len = sizeof("text/plain") - 1;
+  request->headers_out.content_type.data = (u_char*)"text/plain";
+
+  b = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
+  out.buf = b;
+  out.next = NULL;
+  char string[10];
+  sprintf(string, "%d", 1);
+  ngx_str_t count_str = ngx_string(string);
+  b->pos = count_str.data;
+  b->last = count_str.data + count_str.len;
+  b->memory = 1;
+  b->last_buf = 1;
+
+  request->headers_out.content_type.len = sizeof("text/html") - 1;
+  request->headers_out.content_type.data = (u_char *) "text/html";
+  request->headers_out.status = NGX_HTTP_OK;
+  request->headers_out.content_length_n = count_str.len;
+
+  rc = ngx_http_send_header(request);
+  if (rc == NGX_ERROR || rc > NGX_OK || request->header_only) {
+    return rc;
+  }
+
+  return ngx_http_output_filter(request, &out);
+
+
+//			ngx_http_kafka_main_conf_t    *mainConf;
+//		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
+//	
+//	//int ret;
+//		
+//		rd_kafka_topic_partition_list_t *topics;  
+//	topics = rd_kafka_topic_partition_list_new(1);  
+//if(topics == NULL){
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
+//} else {
+//	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
+//}
+//		//把Topic+Partition加入list  
+////		char* topic="test2";
+//		rd_kafka_topic_partition_list_add(topics, topic_name, -1);
+//		
+//
+//		rd_kafka_resp_err_t err;
+//		if((err = rd_kafka_subscribe(mainConf->rk, topics))){  
+//			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
+//			return -1;  
+//		} else {
+//			fprintf(stderr, "rd_kafka_subscribe ok\n");
+//		}
+//
+//		rd_kafka_poll_set_consumer(mainConf->rk);  
 
 	return NGX_DONE;
 }
@@ -281,6 +470,9 @@ fprintf(stderr,"rkmessage  partition %d\n", rkmessage->partition);
 
   if (rkmessage->err) {  
     
+//	rd_kafka_resp_err_t err;
+
+		fprintf(stderr, "%% Failed: %s\n", rd_kafka_err2str(rkmessage->err));  
 
 	if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
 		//fprintf(stderr," aaaa  Consumer reached end of [%ld] \n",rkmessage->offset);
@@ -497,6 +689,25 @@ localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
 	ngx_http_kafka_main_conf_t    *main_conf = NULL;
 	main_conf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
 
+
+	ngx_shm_zone_t *shm_zone;
+    shm_zone = localConf->shm_zone;
+	rd_kafka_t       *rk;
+
+	int i;
+	for(i=0; i < ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count; i++) {
+		if(strcmp(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->topic, topic_name) ==0) {
+			break;
+		}
+	}
+//		rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0];
+		rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->rk;
+		if(rk != NULL) {
+			fprintf(stderr, "%s %s\n", ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->topic, "from shm ok");
+		} else {
+			fprintf(stderr, "%s\n", "from shm err");
+		}
+
 	/*
 	轮询消费者的消息或事件，最多阻塞timeout_ms 
 	应用程序应该定期调用consumer_poll()，即使没有预期的消息，以服务 
@@ -506,9 +717,11 @@ localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
 	//while(1)
 	{
 //		rkmessage =  rd_kafka_consume(localConf->rkt, 0, 1000);
-		rkmessage = rd_kafka_consumer_poll(main_conf->rk, 1000);  
+		//rkmessage = rd_kafka_consumer_poll(main_conf->rk, 1000);  
+		rkmessage = rd_kafka_consumer_poll(rk, 1000);  
 
 		if(rkmessage){ 
+				fprintf(stderr, "%s\n", "have rkmessage");
 			msg_consume(rkmessage, request);
 		}  else {
 			fprintf(stderr, "no data, haha \n");
@@ -593,10 +806,16 @@ static int eof_cnt = 0;
 }
 
 ngx_int_t ngx_http_kafka_init_worker(ngx_cycle_t *cycle) {
+	/*
 	ngx_http_kafka_main_conf_t  *main_conf;
 	  rd_kafka_topic_conf_t *topic_conf;  
 
     main_conf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_kafka_module);
+	
+	
+
+
+
     main_conf->rkc = rd_kafka_conf_new();
 	fprintf(stderr, "555555555555\n");
 
@@ -615,7 +834,7 @@ ngx_int_t ngx_http_kafka_init_worker(ngx_cycle_t *cycle) {
 		fprintf(stderr, "rd_kafka_conf_set group.id ok11111\n");  
 	}
 
-	  /* Consumer groups always use broker based offset storage */  
+	  // Consumer groups always use broker based offset storage 
   if (rd_kafka_topic_conf_set(topic_conf, "offset.store.method",  
                               "broker",  
                               errstr, sizeof(errstr)) !=  
@@ -641,6 +860,7 @@ ngx_int_t ngx_http_kafka_init_worker(ngx_cycle_t *cycle) {
 	} else {
 		fprintf(stderr, "rd_kafka_brokers_add ok 11111111111111\n");
 	}
+	*/
 
 //		rd_kafka_topic_partition_list_t *topics;  
 //			topics = rd_kafka_topic_partition_list_new(1);  
