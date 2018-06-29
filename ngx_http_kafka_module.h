@@ -35,24 +35,24 @@ typedef struct {
     rd_kafka_topic_t *rkt;
     rd_kafka_topic_conf_t  *rktc;
 	int init;
+	ngx_str_t register_topic;
  ngx_shm_zone_t *shm_zone;
 } ngx_http_kafka_loc_conf_t;
 
 typedef struct 
 {
 	rd_kafka_t *rk;
-
-	char topic[];
+	char* topic;
+	char group[];
 } ngx_multi_rdkafka;
 typedef struct{
 	ngx_multi_rdkafka **multi_rdkafka;
- rd_kafka_t **rk;
- rd_kafka_conf_t  **rkc;
-
-  int count;
+	rd_kafka_t **rk;
+	rd_kafka_conf_t  **rkc;
+	int count;
 } ngx_http_hello_world_shm_count_t;
 
-
+char *ngx_http_set_kafka_register_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 char *ngx_http_set_kafka_set_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char g_broker_list[KAFKA_BROKER_MAXLEN * 2];
 static ngx_int_t ngx_http_kafka_init_worker(ngx_cycle_t *cycle);

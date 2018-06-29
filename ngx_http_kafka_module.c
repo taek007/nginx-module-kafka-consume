@@ -10,8 +10,13 @@ int run = 1;
 //extern rd_kafka_topic_partition_list_t* topics; 
 
 static ngx_int_t ngx_http_key_index;
-static ngx_str_t ngx_http_key_value = ngx_string("topic_name");
-ngx_http_variable_value_t *key_vv;
+
+static ngx_int_t group_name_index;
+static ngx_int_t group_name_index2;
+
+ void rebalance_cb (rd_kafka_t *rk, rd_kafka_resp_err_t err,  rd_kafka_topic_partition_list_t *partitions,  void *opaque);
+
+
 ngx_int_t ngx_http_hi_module_init(ngx_conf_t *cf);
 
 static ngx_command_t ngx_http_kafka_commands[] = {
@@ -21,28 +26,30 @@ static ngx_command_t ngx_http_kafka_commands[] = {
         ngx_http_set_kafka_broker_list,
         NGX_HTTP_MAIN_CONF_OFFSET,
         offsetof(ngx_http_kafka_main_conf_t, meta_brokers),
-        NULL },
+        NULL 
+	},
     {
         ngx_string("kafka.topic"),
         NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
         ngx_http_set_kafka_topic,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_kafka_loc_conf_t, topic),
-        NULL },
-		
-		 {
-        ngx_string("kafka.set_topic"),
+        NULL 
+	},
+	{
+        ngx_string("kafka.register_topic"),
         NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-        ngx_http_set_kafka_set_topic,
+        ngx_http_set_kafka_register_topic,
         NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_kafka_loc_conf_t, topic),
-        NULL },
+        offsetof(ngx_http_kafka_loc_conf_t, register_topic),
+        NULL
+	},
     ngx_null_command
 };
 
 static ngx_http_module_t ngx_http_kafka_module_ctx = {
     NULL,
-    ngx_http_hi_module_init,  /* postconfiguration 从配置文件中读取key定义 */
+    NULL,  /* postconfiguration 从配置文件中读取key定义 */
 
     ngx_http_kafka_create_main_conf,      
     NULL,
@@ -60,11 +67,33 @@ static ngx_int_t ngx_http_hi_module_variable_not_found(ngx_http_request_t *r, ng
 {
     v->not_found = 1;
     return NGX_OK;
+
+//	v->len = r->uri.len + r->args.len;
+//	fprintf(stderr, "cccccc1 %d\n", v->len);
+//
+//    v->len += (r->args.len > 0 ? 1 : 0);
+//
+//	fprintf(stderr, "cccccc %d\n", v->len);
+//    v->data = ngx_palloc(r->pool, v->len);
+//    if (v->data == NULL) {
+//        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+//    }
+//
+//    ngx_memcpy(v->data, r->uri.data, r->uri.len);
+//    if (r->args.len) {
+//        *(v->data + r->uri.len) = '?';
+//        ngx_memcpy(v->data + r->uri.len + 1, r->args.data, r->args.len);
+//    }
+//
+//    v->valid = 1;
+//    v->no_cacheable = 0;
+//
+//    return NGX_OK;
 }
 
 static ngx_int_t ngx_http_hi_module_add_variable(ngx_conf_t *cf, ngx_str_t *name) {
     ngx_http_variable_t         *v;
-    v = ngx_http_add_variable(cf, name, NGX_HTTP_VAR_CHANGEABLE);
+    v = ngx_http_add_variable(cf, name, NGX_HTTP_VAR_NOCACHEABLE);
     if (v == NULL) {
         return NGX_ERROR;
     }
@@ -73,18 +102,18 @@ static ngx_int_t ngx_http_hi_module_add_variable(ngx_conf_t *cf, ngx_str_t *name
     return ngx_http_get_variable_index(cf, name);
 }
 
-ngx_int_t ngx_http_hi_module_init(ngx_conf_t *cf){
-    printf("called:ngx_http_hi_module_init\n");
-    // 读key参数
-    if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
-        return NGX_ERROR;
-    }
-    return NGX_OK;
-}
-
-
-
-
+//ngx_int_t ngx_http_hi_module_init(ngx_conf_t *cf){
+//    printf("called:ngx_http_hi_module_init\n");
+//    // 读key参数
+//    if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+//        return NGX_ERROR;
+//    }
+//
+//	if ((group_name_index = ngx_http_hi_module_add_variable( cf, &group_name_value)) == NGX_ERROR) {
+//        return NGX_ERROR;
+//    }
+//    return NGX_OK;
+//}
 
 ngx_module_t ngx_http_kafka_module = {
     NGX_MODULE_V1,
@@ -140,6 +169,7 @@ static ngx_int_t ngx_http_hello_world_init_shm_zone(ngx_shm_zone_t *shm_zone, vo
     shm_zone->data = data;
     return NGX_OK;
   }
+
   shpool = (ngx_slab_pool_t *)shm_zone->shm.addr;
   shm_count = ngx_slab_alloc(shpool, sizeof *shm_count);
   shm_count->count = 0;
@@ -151,6 +181,7 @@ static ngx_int_t ngx_http_hello_world_init_shm_zone(ngx_shm_zone_t *shm_zone, vo
    int i;
    for(i=0; i< 8;i++){
 		shm_count->multi_rdkafka[i] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* )+50);
+		shm_count->multi_rdkafka[i]->topic = ngx_slab_alloc(shpool, 50);
    }
 //     shm_count->rk[0] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ));
 //     shm_count->rk[1] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ));
@@ -232,9 +263,15 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (clcf == NULL) {
         return NGX_CONF_ERROR;
     }
- if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+
+//	if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+//        return NGX_CONF_ERROR;
+//    }
+	ngx_str_t group_name_value = ngx_string("group_name");
+	if ((group_name_index2 = ngx_http_hi_module_add_variable( cf, &group_name_value)) == NGX_ERROR) {
         return NGX_CONF_ERROR;
     }
+	fprintf(stderr, "haha %ld\n", group_name_index2);
 //    return NGX_OK;
     clcf->handler = ngx_http_kafka_handler;
 	
@@ -252,14 +289,42 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
-static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
+static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *request) {
+	char* topic_name = NULL;
+	char* tmp_topic_name = NULL;
+	char* group_name = NULL;
+	int len = 0;
+	
+//	ngx_http_variable_value_t *ngx_group_name_tmp;
+	ngx_http_variable_value_t *value;
+	value = ngx_http_get_indexed_variable(request, group_name_index);
+	
+
+	
+	len = value->len+1;
+	group_name = (char*)malloc(sizeof(char) * value->len);
+	memset(group_name, 0, len);
+	memcpy(group_name, value->data, len);
+	fprintf(stderr, "group_name is %s, %d\n", group_name, len-1);
+	
+	
+	ngx_http_variable_value_t *key_vv;
 	key_vv = ngx_http_get_indexed_variable(request, ngx_http_key_index);
-	 char* topic_name = NULL;
-	topic_name = (char*)key_vv->data;
-	fprintf(stderr, "new key is %s\n", topic_name);
+	tmp_topic_name = (char*)key_vv->data;
+	
+	fprintf(stderr, "tmp_topic_name is %s, %d\n", tmp_topic_name, key_vv->len);
+	
+	//获取topic_name
+	char* tmp = strstr(tmp_topic_name, group_name);
+	topic_name = (char*)malloc(sizeof(char)* 50);
+	memset(topic_name, 0, 50);
+	memcpy(topic_name, tmp_topic_name, tmp - tmp_topic_name);
+
+	fprintf(stderr, " topic_name is %s\n", topic_name);
+
 
 //	rd_kafka_t * shm_rk;
-	//rd_kafka_conf_t * shm_rkc;
+//rd_kafka_conf_t * shm_rkc;
 	ngx_int_t rc;
 	ngx_buf_t* b;
 	ngx_chain_t out;
@@ -277,10 +342,10 @@ static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
 
     rd_kafka_conf_t  *rkc = rd_kafka_conf_new();
 	
-	char*	group = "test2";  
+
 	char	errstr[512];  
 
-	if (rd_kafka_conf_set(rkc, "group.id", group,  errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
+	if (rd_kafka_conf_set(rkc, "group.id", group_name,  errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
 		fprintf(stderr, "%% %s\n", errstr);  
 		return -1;  
 	} else {
@@ -294,6 +359,7 @@ static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
 		  return -1;  
 	}  
 	rd_kafka_conf_set_default_topic_conf(rkc, topic_conf);  
+	rd_kafka_conf_set_rebalance_cb(rkc, rebalance_cb);
 
 	rd_kafka_t *rk = rd_kafka_new(RD_KAFKA_CONSUMER, rkc, NULL, 0);
 
@@ -328,10 +394,7 @@ static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
 
 		rd_kafka_poll_set_consumer(rk);  
 
-
 		shm_zone = localConf->shm_zone;
-		
-	
 		int count;
 		count = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count;
 		
@@ -339,13 +402,16 @@ static ngx_int_t ngx_http_kafka_handler_set(ngx_http_request_t *request) {
 // shpool = (ngx_slab_pool_t *)shm_zone->shm.addr;
 //		shm_zone->data->multi_rdkafka[count] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ) + strlen(topic_name));
 //	shm_zone->data->multi_rdkafka[count].rk =  rk;
+//	ngx_http_hello_world_shm_count_t* data = (ngx_http_hello_world_shm_count_t *)shm_zone->data;
 
 	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->rk  = rk;
-
-		memcpy(	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->topic, topic_name, strlen(topic_name));
-count = count+1;
+//
+	memcpy(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->topic, topic_name, strlen(topic_name));
+	memcpy(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->group, group_name, strlen(group_name));
+	count = count+1;
 ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count = count;
-		if(strstr(topic_name, "test")) {
+
+	if(strstr(topic_name, "test")) {
 //						ngx_http_kafka_main_conf_t    *mainConf;
 						
 //		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
@@ -433,22 +499,37 @@ count = count+1;
 	return NGX_DONE;
 }
 
-char *ngx_http_set_kafka_set_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+char *ngx_http_set_kafka_register_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
 	fprintf(stderr, "999999999999999999999999999\n");
-
     ngx_http_core_loc_conf_t   *clcf;
 //    ngx_http_kafka_loc_conf_t  *local_conf;
+
+	
 
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     if (clcf == NULL) {
         return NGX_CONF_ERROR;
     }
- if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+	
+	ngx_str_t ngx_http_key_value = ngx_string("topic_name");
+	ngx_str_t group_name_value = ngx_string("group_name");
+
+	if ((group_name_index = ngx_http_hi_module_add_variable( cf, &group_name_value)) == NGX_ERROR) {
         return NGX_CONF_ERROR;
     }
+
+	fprintf(stderr, "group_name_index %ld\n", group_name_index);
+	
+
+	if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
+        return NGX_CONF_ERROR;
+    }
+	
+fprintf(stderr, "ngx_http_key_index %ld\n", ngx_http_key_index);
+
 //    return NGX_OK;
-    clcf->handler = ngx_http_kafka_handler_set;
+    clcf->handler = ngx_http_kafka_handler_register_topic;
 	
 //	ngx_http_hi_module_init(cf);
 
@@ -563,147 +644,60 @@ void ngx_http_kafka_post_callback_handler(ngx_http_request_t *request) {
 local_conf里的init 是个开关, 初始值为0, 第一个请求过来时设置为1, 这样不用每次绑定topic了
 */
 static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
+	
+//	char* group_name = NULL;
+	ngx_http_variable_value_t *value;
 
-    key_vv = ngx_http_get_indexed_variable(request, ngx_http_key_index);
-	 char* topic_name = NULL;
-	topic_name = (char*)key_vv->data;
-	fprintf(stderr, " key is %s\n", topic_name);
+	
+
+	value = ngx_http_get_indexed_variable(request, group_name_index2);
+
+	ngx_http_variable_value_t *group_name = ngx_palloc(request->pool, sizeof(ngx_http_variable_value_t));
+
+		 group_name->data = ngx_palloc(request->pool, value->len);
+		
+	ngx_memcpy(group_name->data, value->data, value->len);
+	group_name->len = value->len;
+//	group_name = (char*)value->data;
+
+//	int len = 0;
+//	len = value->len;
+//	fprintf(stderr, "ok %s\n", (char*)value->data);
+//	group_name = (char*)malloc(sizeof(char) * value->len+1);
+////	memset(group_name, 0, len);
+//	memcpy(group_name, (char*)value->data, len);
+
+	fprintf(stderr, "group_name is %s %d\n", group_name->data, group_name->len);
+
 	ngx_http_kafka_loc_conf_t       *localConf;
-
-//	ngx_str_t topic; 
-//	char* topic_name = (char*)malloc(sizeof(char)* strlen("topic_name"));
-//	memset(topic_name, 0, 4);
-//	 if (ngx_http_arg(request,(u_char *) "topic_name", strlen("topic_name"), &topic) != NGX_OK) {
-//	return NGX_HTTP_FORBIDDEN;
-//    }
-//
-//	memcpy(topic_name, topic.data, 4);
-//	fprintf(stderr, "%s\n",topic_name);
-//	fprintf(stderr, "%s\n", topic.data);
-//	
-//	ngx_int_t index_1;
-//
-//	u_char ngx_string[1024]={0};    //存储返回的字符串
-//    ngx_http_variable_value_t *value;
-//	
-//    value = ngx_http_get_indexed_variable(request,index);
-//    if (value == NULL || value->not_found){
-//        ngx_sprintf(ngx_string,"value is not exsit!");
-//    }
-//    else {
-//        ngx_sprintf(ngx_string,"value:%s",value->data);
-//    }
-
-
-
-
-//	ngx_http_kafka_main_conf_t    *mainConf;
-//		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
-localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
-//	//int ret;
-//		
-//		
-//			topics = rd_kafka_topic_partition_list_new(1);  
-//if(topics == NULL){
-//	fprintf(stderr, "rd_kafka_topic_partition_list_new error \n");
-//} else {
-//	fprintf(stderr, "rd_kafka_topic_partition_list_new ok \n");
-//}
-//		//把Topic+Partition加入list  
-////		char* topic="test2";
-//		rd_kafka_topic_partition_list_add(topics, topic_name, -1);
-//		
-//
-//		rd_kafka_resp_err_t err;
-//		if((err = rd_kafka_subscribe(mainConf->rk, topics))){  
-//			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
-//			return -1;  
-//		} else {
-//			fprintf(stderr, "rd_kafka_subscribe ok\n");
-//		}
-//
-//		rd_kafka_poll_set_consumer(mainConf->rk);  
-
-
-	if (localConf->init == 0) {
-
-			
-
-
-	//	const char* topic = NULL;
-	//	topic = (const char *)localConf->topic.data;
-	//	ngx_log_error(NGX_LOG_ERR , request->connection->log, 0, "topic is %s\n", topic);
-
-	//
-
-//		localConf->rkt = rd_kafka_topic_new(mainConf->rk, topic, localConf->rktc);
-
-
-	//rd_kafka_conf_set_default_topic_conf(mainConf->rkc, localConf->rktc);
-
-
-				
-
-
-		/*
-		RD_KAFKA_OFFSET_END
-		RD_KAFKA_OFFSET_BEGINNING
-		*/
-
-//		int ret;
-//		ret = rd_kafka_consume_start(localConf->rkt, 0, RD_KAFKA_OFFSET_END);
-//		  if (ret == -1) {
-//			fprintf(stderr, "rd_kafka_consume_start error\n");
-//		  } else {
-//			fprintf(stderr, "rd_kafka_consume_start ok\n");
-//		  }
-		//rd_kafka_conf_set(mainConf->rkc, "auto.offset.reset", "RD_KAFKA_OFFSET_BEGINNING", NULL, 0);
-		//rd_kafka_topic_conf_set(localConf->rktc, "auto.offset.reset", "RD_KAFKA_OFFSET_BEGINNING", NULL, 0);
-
-		  
-
-
-		// char errstr[512];  
-		// Consumer groups always use broker based offset storage
-//		if (rd_kafka_conf_set(mainConf->rkc, "offset.store.method", "broker", errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
-//			fprintf(stderr, "%% %s\n", errstr);  
-//			return -1;  
-//		}  else {
-//			fprintf(stderr," rd_kafka_conf_set  offset.store.methodok\n");
-//		}
-
-/*
-		if (rd_kafka_conf_set(mainConf->rkc, "auto.offset.reset", "latest", errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
-			fprintf(stderr, "%% %s\n", errstr);  
-			return -1;  
-		}   else {
-			fprintf(stderr," rd_kafka_conf_set ok\n");
-		}
-*/
-
-
-	//	localConf->init = 1;
-	}
+	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
 
 	rd_kafka_message_t *rkmessage;  
-	ngx_http_kafka_main_conf_t    *main_conf = NULL;
-	main_conf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
 
+//	ngx_http_kafka_main_conf_t    *main_conf = NULL;
+//	main_conf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
 
-	ngx_shm_zone_t *shm_zone;
+	ngx_shm_zone_t * shm_zone = NULL;
     shm_zone = localConf->shm_zone;
 	rd_kafka_t       *rk;
 
 	int i;
+
+	int res;
 	for(i=0; i < ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count; i++) {
-		if(strcmp(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->topic, topic_name) ==0) {
+		if( (res = strncmp(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group, (char*)group_name->data, (group_name->len)) ) ==0) {
+			fprintf(stderr, "eq %d\n", i);
 			break;
+		} else{
+			fprintf(stderr, "%d %s no eq %s %d\n",res, ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group,group_name->data,  i);
+
+			fprintf(stderr, "%ld %d \n", strlen(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group), (group_name->len));
 		}
 	}
 //		rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0];
 		rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->rk;
 		if(rk != NULL) {
-			fprintf(stderr, "%s %s\n", ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->topic, "from shm ok");
+			fprintf(stderr, "%s %s\n", ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group, "from shm ok");
 		} else {
 			fprintf(stderr, "%s\n", "from shm err");
 		}
