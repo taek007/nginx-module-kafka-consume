@@ -1,4 +1,4 @@
-# nginx-module-kafka-comsume
+# nginx-module-kafka-consume
 ## 通过http请求方式,消费kafka数据<br/>
 ### 完整的消费数据，需要调用两个接口<br/>
 a) http://127.0.0.1:81/register_topic?group_name=test_group&topic_name=test<br/>
