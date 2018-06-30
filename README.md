@@ -2,7 +2,7 @@
 ## 通过http请求方式,消费kafka数据<br/>
 ### 完整的消费数据，需要调用两个接口<br/>
 a) http://127.0.0.1:81/register_topic?group_name=test_group&topic_name=test<br/>
-   设置消费组<br/><br/>
+   设置消费组: test_group以及topic: test<br/><br/>
 b) http://127.0.0.1:81/consume?group_name=test_group<br/>
    开始消费<br/>
    
