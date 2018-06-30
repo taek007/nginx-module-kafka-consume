@@ -291,40 +291,29 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *request) {
 	char* topic_name = NULL;
-	char* tmp_topic_name = NULL;
 	char* group_name = NULL;
 	int len = 0;
 	
-//	ngx_http_variable_value_t *ngx_group_name_tmp;
 	ngx_http_variable_value_t *value;
 	value = ngx_http_get_indexed_variable(request, group_name_index);
 	
-
+	fprintf(stderr, "origin %s\n", value->data);
 	
-	len = value->len+1;
-	group_name = (char*)malloc(sizeof(char) * value->len);
-	memset(group_name, 0, len);
+	len = value->len;
+	group_name = (char*)malloc(sizeof(char) * value->len+1);
+	memset(group_name, 0, len+1);
 	memcpy(group_name, value->data, len);
-	fprintf(stderr, "group_name is %s, %d\n", group_name, len-1);
+	fprintf(stderr, "group_name is %s, %d\n", group_name, len);
 	
 	
-	ngx_http_variable_value_t *key_vv;
-	key_vv = ngx_http_get_indexed_variable(request, ngx_http_key_index);
-	tmp_topic_name = (char*)key_vv->data;
+	value = ngx_http_get_indexed_variable(request, ngx_http_key_index);
 	
-	fprintf(stderr, "tmp_topic_name is %s, %d\n", tmp_topic_name, key_vv->len);
-	
-	//获取topic_name
-	char* tmp = strstr(tmp_topic_name, group_name);
-	topic_name = (char*)malloc(sizeof(char)* 50);
-	memset(topic_name, 0, 50);
-	memcpy(topic_name, tmp_topic_name, tmp - tmp_topic_name);
+	len = value->len;
+	topic_name = (char*)malloc(sizeof(char) * value->len+1);
+	memset(topic_name, 0, len+1);
+	memcpy(topic_name, value->data, len);
+	fprintf(stderr, "topic_name is %s, %d\n", topic_name, len);
 
-	fprintf(stderr, " topic_name is %s\n", topic_name);
-
-
-//	rd_kafka_t * shm_rk;
-//rd_kafka_conf_t * shm_rkc;
 	ngx_int_t rc;
 	ngx_buf_t* b;
 	ngx_chain_t out;
@@ -341,7 +330,6 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 	}
 
     rd_kafka_conf_t  *rkc = rd_kafka_conf_new();
-	
 
 	char	errstr[512];  
 
@@ -349,7 +337,7 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 		fprintf(stderr, "%% %s\n", errstr);  
 		return -1;  
 	} else {
-		fprintf(stderr, "rd_kafka_conf_set group.id ok11111\n");  
+		fprintf(stderr, "rd_kafka_conf_set group.id ok\n");  
 	}
 
 	rd_kafka_topic_conf_t *topic_conf;  
@@ -366,11 +354,8 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 	if (rd_kafka_brokers_add(rk, g_broker_list) == 0){  
 		fprintf(stderr, "No valid brokers specified\n");
 	} else {
-		fprintf(stderr, "rd_kafka_brokers_add ok 11111111111111\n");
+		fprintf(stderr, "rd_kafka_brokers_add ok \n");
 	}
-	
-
-
 
 	rd_kafka_topic_partition_list_t *topics;  
 	topics = rd_kafka_topic_partition_list_new(1);  
@@ -381,92 +366,81 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 	}
 		//把Topic+Partition加入list  
 //		char* topic="test2";
-		rd_kafka_topic_partition_list_add(topics, topic_name, -1);
-		
 
-		rd_kafka_resp_err_t err;
-		if((err = rd_kafka_subscribe(rk, topics))){  
-			fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
-			return -1;  
-		} else {
-			fprintf(stderr, "rd_kafka_subscribe ok\n");
-		}
+	rd_kafka_topic_partition_list_add(topics, topic_name, -1);
+	rd_kafka_resp_err_t err;
 
-		rd_kafka_poll_set_consumer(rk);  
+	if((err = rd_kafka_subscribe(rk, topics))){  
+		fprintf(stderr, "%% Failed to start consuming topics: %s\n", rd_kafka_err2str(err));  
+		return -1;  
+	} else {
+		fprintf(stderr, "rd_kafka_subscribe ok\n");
+	}
 
-		shm_zone = localConf->shm_zone;
-		int count;
-		count = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count;
-		
+	rd_kafka_poll_set_consumer(rk);  
+
+	shm_zone = localConf->shm_zone;
+	int count;
+	count = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count;
+	
+	int res;
+	int flag = 0;
+	int i, pos;
+	for(i=0; i < count; i++) {
+		if( (res = strncmp(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group, group_name, strlen(group_name)) ) ==0) {
+			//fprintf(stderr, "eq %d\n", i);
+			flag = 1;
+			break;
+		} 
+	}
+
 //  ngx_slab_pool_t *shpool;
 // shpool = (ngx_slab_pool_t *)shm_zone->shm.addr;
 //		shm_zone->data->multi_rdkafka[count] = ngx_slab_alloc(shpool, sizeof( rd_kafka_t* ) + strlen(topic_name));
 //	shm_zone->data->multi_rdkafka[count].rk =  rk;
 //	ngx_http_hello_world_shm_count_t* data = (ngx_http_hello_world_shm_count_t *)shm_zone->data;
-
-	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->rk  = rk;
-//
-	memcpy(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->topic, topic_name, strlen(topic_name));
-	memcpy(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[count]->group, group_name, strlen(group_name));
-	count = count+1;
-((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count = count;
-
-	if(strstr(topic_name, "test")) {
-//						ngx_http_kafka_main_conf_t    *mainConf;
-						
-//		mainConf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
-//mainConf->rk = rk;
-//			shm_rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0];
-////			memcpy(shm_rk, rk, sizeof(rd_kafka_t*));
-//		  shm_rk =rk;
-//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0] = shm_rk;
-//
-//			shm_rkc = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[0];
-//			memcpy(shm_rkc, rkc, sizeof(rd_kafka_conf_t*));
-//			//shm_rkc =rkc;
-//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[0] = shm_rkc;
-		}else {
-//			shm_rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[1];
-//			memcpy(shm_rk, rk, sizeof(rd_kafka_t*));
-//		//  shm_rk =rk;
-//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[1] = shm_rk;
-//
-//			shm_rkc = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[1];
-//			memcpy(shm_rkc, rkc, sizeof(rd_kafka_conf_t*));
-//			//shm_rkc =rkc;
-//			((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rkc[1] = shm_rkc;
-		}
 	
-	//int ret;
-		
+	if (flag == 1){
+		pos = i;
+	} else {
+		pos = count;
+	}
 
+	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[pos]->rk  = rk;
 
+	memcpy(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[pos]->topic, topic_name, strlen(topic_name));
+	memcpy(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[pos]->group, group_name, strlen(group_name));
+	
+	count = count+1;
+	((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count = count;
 
-  request->headers_out.content_type.len = sizeof("text/plain") - 1;
-  request->headers_out.content_type.data = (u_char*)"text/plain";
+	request->headers_out.content_type.len = sizeof("text/plain") - 1;
+	request->headers_out.content_type.data = (u_char*)"text/plain";
 
-  b = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
-  out.buf = b;
-  out.next = NULL;
-  char string[10];
-  sprintf(string, "%d", 1);
-  ngx_str_t count_str = ngx_string(string);
-  b->pos = count_str.data;
-  b->last = count_str.data + count_str.len;
-  b->memory = 1;
-  b->last_buf = 1;
+	b = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
+	out.buf = b;
+	out.next = NULL;
 
-  request->headers_out.content_type.len = sizeof("text/html") - 1;
-  request->headers_out.content_type.data = (u_char *) "text/html";
-  request->headers_out.status = NGX_HTTP_OK;
-  request->headers_out.content_length_n = count_str.len;
+	char string[100] = {0};
+	sprintf(string, "consume url is: /consume?group_name=%s, topic_name is %s\n", group_name, topic_name);
 
-  rc = ngx_http_send_header(request);
-  if (rc == NGX_ERROR || rc > NGX_OK || request->header_only) {
-    return rc;
-  }
+	ngx_str_t count_str = ngx_string(string);
+	b->pos = count_str.data;
+	b->last = count_str.data + count_str.len;
+	b->memory = 1;
+	b->last_buf = 1;
 
-  return ngx_http_output_filter(request, &out);
+	request->headers_out.content_type.len = sizeof("text/html") - 1;
+	request->headers_out.content_type.data = (u_char *) "text/html";
+	request->headers_out.status = NGX_HTTP_OK;
+	request->headers_out.content_length_n = count_str.len;
+
+	rc = ngx_http_send_header(request);
+	if (rc == NGX_ERROR || rc > NGX_OK || request->header_only) {
+		return rc;
+	}
+
+	return ngx_http_output_filter(request, &out);
 
 
 //			ngx_http_kafka_main_conf_t    *mainConf;
@@ -505,8 +479,6 @@ char *ngx_http_set_kafka_register_topic(ngx_conf_t *cf, ngx_command_t *cmd, void
     ngx_http_core_loc_conf_t   *clcf;
 //    ngx_http_kafka_loc_conf_t  *local_conf;
 
-	
-
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     if (clcf == NULL) {
         return NGX_CONF_ERROR;
@@ -519,19 +491,11 @@ char *ngx_http_set_kafka_register_topic(ngx_conf_t *cf, ngx_command_t *cmd, void
         return NGX_CONF_ERROR;
     }
 
-	fprintf(stderr, "group_name_index %ld\n", group_name_index);
-	
-
 	if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
         return NGX_CONF_ERROR;
     }
 	
-fprintf(stderr, "ngx_http_key_index %ld\n", ngx_http_key_index);
-
-//    return NGX_OK;
     clcf->handler = ngx_http_kafka_handler_register_topic;
-	
-//	ngx_http_hi_module_init(cf);
 
     if (ngx_conf_set_str_slot(cf, cmd, conf) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
@@ -547,29 +511,27 @@ fprintf(stderr, "ngx_http_key_index %ld\n", ngx_http_key_index);
 void msg_consume (rd_kafka_message_t *rkmessage, void *opaque) {
 	ngx_http_request_t* request = (ngx_http_request_t*)opaque;
 	char* res = NULL;
-fprintf(stderr,"rkmessage  partition %d\n", rkmessage->partition);
+	fprintf(stderr,"rkmessage  partition %d\n", rkmessage->partition);
 
-  if (rkmessage->err) {  
-    
-//	rd_kafka_resp_err_t err;
-
+	if (rkmessage->err) {  
+		//	rd_kafka_resp_err_t err;
 		fprintf(stderr, "%% Failed: %s\n", rd_kafka_err2str(rkmessage->err));  
 
-	if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
+		if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
 		//fprintf(stderr," aaaa  Consumer reached end of [%ld] \n",rkmessage->offset);
 		// run =0;
-	msg_consume2(request, "no data, daye");
-		return;
-	}
+			msg_consume2(request, "no data, daye");
+			return;
+		}
 
-	    if (rkmessage->rkt)  {
-		msg_consume2(request, "no data, rkt");
-		return;
+		if (rkmessage->rkt)  {
+			msg_consume2(request, "no data, rkt");
+			return;
 		} else {
-		msg_consume2(request, "no data, nb");
-		return;
-			}
-  }
+			msg_consume2(request, "no data, nb");
+			return;
+		}
+	}
 	
 	res = (char*)rkmessage->payload;
 	fprintf(stderr, "input: %s\n", res);
@@ -648,24 +610,14 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 //	char* group_name = NULL;
 	ngx_http_variable_value_t *value;
 
-	
-
 	value = ngx_http_get_indexed_variable(request, group_name_index2);
 
 	ngx_http_variable_value_t *group_name = ngx_palloc(request->pool, sizeof(ngx_http_variable_value_t));
 
-		 group_name->data = ngx_palloc(request->pool, value->len);
+	group_name->data = ngx_palloc(request->pool, value->len);
 		
 	ngx_memcpy(group_name->data, value->data, value->len);
 	group_name->len = value->len;
-//	group_name = (char*)value->data;
-
-//	int len = 0;
-//	len = value->len;
-//	fprintf(stderr, "ok %s\n", (char*)value->data);
-//	group_name = (char*)malloc(sizeof(char) * value->len+1);
-////	memset(group_name, 0, len);
-//	memcpy(group_name, (char*)value->data, len);
 
 	fprintf(stderr, "group_name is %s %d\n", group_name->data, group_name->len);
 
@@ -673,9 +625,6 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 	localConf = ngx_http_get_module_loc_conf(request, ngx_http_kafka_module);
 
 	rd_kafka_message_t *rkmessage;  
-
-//	ngx_http_kafka_main_conf_t    *main_conf = NULL;
-//	main_conf = ngx_http_get_module_main_conf(request, ngx_http_kafka_module);
 
 	ngx_shm_zone_t * shm_zone = NULL;
     shm_zone = localConf->shm_zone;
@@ -686,12 +635,12 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 	int res;
 	for(i=0; i < ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->count; i++) {
 		if( (res = strncmp(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group, (char*)group_name->data, (group_name->len)) ) ==0) {
-			fprintf(stderr, "eq %d\n", i);
+			//fprintf(stderr, "eq %d\n", i);
 			break;
 		} else{
-			fprintf(stderr, "%d %s no eq %s %d\n",res, ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group,group_name->data,  i);
+			//fprintf(stderr, "%d %s no eq %s %d\n",res, ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group,group_name->data,  i);
 
-			fprintf(stderr, "%ld %d \n", strlen(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group), (group_name->len));
+			//fprintf(stderr, "%ld %d \n", strlen(((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group), (group_name->len));
 		}
 	}
 //		rk = ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->rk[0];
@@ -700,6 +649,12 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 			fprintf(stderr, "%s %s\n", ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group, "from shm ok");
 		} else {
 			fprintf(stderr, "%s\n", "from shm err");
+			char* msg = (char*) malloc(sizeof(char)*50);
+			memset(msg, 0, 50);
+			sprintf(msg, "consume group %s not exists\n", (char*)group_name->data); 
+			msg_consume2(request, msg);
+			free(msg);
+			return NGX_DONE;
 		}
 
 	/*
@@ -715,7 +670,7 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 		rkmessage = rd_kafka_consumer_poll(rk, 1000);  
 
 		if(rkmessage){ 
-				fprintf(stderr, "%s\n", "have rkmessage");
+			fprintf(stderr, "%s\n", "have rkmessage");
 			msg_consume(rkmessage, request);
 		}  else {
 			fprintf(stderr, "no data, haha \n");
@@ -769,13 +724,9 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 
 static int partition_cnt = 0;
 static int eof_cnt = 0;
- void rebalance_cb (rd_kafka_t *rk,
-			  rd_kafka_resp_err_t err,
-			  rd_kafka_topic_partition_list_t *partitions,
-			  void *opaque) {
+ void rebalance_cb (rd_kafka_t *rk,  rd_kafka_resp_err_t err, rd_kafka_topic_partition_list_t *partitions, void *opaque) {
 
-	switch (err)
-	{
+	switch (err) {
 	case RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS:
 		fprintf(stderr,
 			"%% Group rebalanced: %d partition(s) assigned\n",
