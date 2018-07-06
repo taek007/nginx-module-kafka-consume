@@ -13,6 +13,7 @@ static ngx_int_t ngx_http_key_index;
 
 static ngx_int_t group_name_index;
 static ngx_int_t group_name_index2;
+static ngx_int_t set_offset_method_index;
 
  void rebalance_cb (rd_kafka_t *rk, rd_kafka_resp_err_t err,  rd_kafka_topic_partition_list_t *partitions,  void *opaque);
 
@@ -272,6 +273,11 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 	fprintf(stderr, "haha %ld\n", group_name_index2);
+
+	
+
+	
+
 //    return NGX_OK;
     clcf->handler = ngx_http_kafka_handler;
 	
@@ -292,27 +298,42 @@ char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *request) {
 	char* topic_name = NULL;
 	char* group_name = NULL;
+	char* set_offset_method = NULL;
 	int len = 0;
 	
 	ngx_http_variable_value_t *value;
+
 	value = ngx_http_get_indexed_variable(request, group_name_index);
-	
 	fprintf(stderr, "origin %s\n", value->data);
-	
+
 	len = value->len;
 	group_name = (char*)malloc(sizeof(char) * value->len+1);
 	memset(group_name, 0, len+1);
 	memcpy(group_name, value->data, len);
+	
+	if ( !strlen(group_name)) {
+		group_name = "default_group_name";
+	}
+
 	fprintf(stderr, "group_name is %s, %d\n", group_name, len);
 	
-	
+	//取出topic_name
 	value = ngx_http_get_indexed_variable(request, ngx_http_key_index);
-	
 	len = value->len;
 	topic_name = (char*)malloc(sizeof(char) * value->len+1);
 	memset(topic_name, 0, len+1);
 	memcpy(topic_name, value->data, len);
 	fprintf(stderr, "topic_name is %s, %d\n", topic_name, len);
+	
+	//取出set_offset_method
+	value = ngx_http_get_indexed_variable(request, set_offset_method_index);
+	len = value->len;
+	set_offset_method = (char*)malloc(sizeof(char) * value->len+1);
+	memset(set_offset_method, 0, len+1);
+	memcpy(set_offset_method, value->data, len);
+	fprintf(stderr, "set_offset_method is %s, %d\n", set_offset_method, len);
+
+
 
 	ngx_int_t rc;
 	ngx_buf_t* b;
@@ -422,9 +443,49 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 	out.next = NULL;
 
 	char string[100] = {0};
-	sprintf(string, "consume url is: /consume?group_name=%s, topic_name is %s\n", group_name, topic_name);
+	sprintf(string, "/consume?group_name=%s", group_name);
+	
+	/*
+	{"error_code":0,"error_msg":"","url":"/consume?group_name=default_group_name","group_name":"default_group_name","set_offset_method":"cccc"}
+	*/
+	char result[500] = {};
+	char s1[20] = {0};
+	char s2[100] = {0};
+	char s3[100] = {0};
+	char s4[100] = {0};
+	sprintf(s1, "{\"error_code\":%d", 0);
+	sprintf(s2, "\"error_msg\":%s", "");
+	sprintf(s3, "\"url\":\"/consume?group_name=%s\"", group_name);
+	sprintf(s4, "\"set_offset_method\":\"%s\"}", set_offset_method);
+	
+	strcat(result, s1);
+	strcat(result, s2);
+	strcat(result, s3);
+	strcat(result, s4);
+	fprintf(stderr, "aaaaaaaaaa %s\n", result);
+	/*
+	GString *result =g_string_new(NULL);
+	g_string_append_c(result, '{');
+	g_string_append_printf(result, "\"error_code\":%d", 0);
+	g_string_append_printf(result, "\"error_msg\":%s", "");
+	g_string_append_printf(result, "\"url\":\"/consume?group_name=%s\"", default_group_name);
+	g_string_append_printf(result, "\"set_offset_method\":\"%s\"", set_offset_method);
 
-	ngx_str_t count_str = ngx_string(string);
+	g_string_append_c(result, '}');
+	
+	
+	cJSON * root =  cJSON_CreateObject();
+	cJSON_AddItemToObject(root, "error_code", cJSON_CreateNumber(0));
+	cJSON_AddItemToObject(root, "error_msg", cJSON_CreateString(""));
+	cJSON_AddItemToObject(root, "url", cJSON_CreateString(string));
+	cJSON_AddItemToObject(root, "group_name", cJSON_CreateString(group_name));
+	cJSON_AddItemToObject(root, "set_offset_method", cJSON_CreateString(set_offset_method));
+	
+	char* result = cJSON_PrintUnformatted(root);
+	fprintf(stderr, "return %s\n", result);
+	*/
+
+	ngx_str_t count_str = ngx_string(result);
 	b->pos = count_str.data;
 	b->last = count_str.data + count_str.len;
 	b->memory = 1;
@@ -486,6 +547,7 @@ char *ngx_http_set_kafka_register_topic(ngx_conf_t *cf, ngx_command_t *cmd, void
 	
 	ngx_str_t ngx_http_key_value = ngx_string("topic_name");
 	ngx_str_t group_name_value = ngx_string("group_name");
+	ngx_str_t set_offset_method_value = ngx_string("set_offset_method");
 
 	if ((group_name_index = ngx_http_hi_module_add_variable( cf, &group_name_value)) == NGX_ERROR) {
         return NGX_CONF_ERROR;
@@ -494,6 +556,12 @@ char *ngx_http_set_kafka_register_topic(ngx_conf_t *cf, ngx_command_t *cmd, void
 	if ((ngx_http_key_index = ngx_http_hi_module_add_variable( cf, &ngx_http_key_value)) == NGX_ERROR) {
         return NGX_CONF_ERROR;
     }
+
+	
+	if ((set_offset_method_index = ngx_http_hi_module_add_variable( cf, &set_offset_method_value)) == NGX_ERROR) {
+        return NGX_CONF_ERROR;
+    }
+
 	
     clcf->handler = ngx_http_kafka_handler_register_topic;
 

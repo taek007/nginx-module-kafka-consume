@@ -4,6 +4,8 @@
 #define KAFKA_TOPIC_MAXLEN      256
 #define KAFKA_BROKER_MAXLEN     512
 
+//#include "glib.h"
+
 /*
 c语言 头文件切勿定义变量
 否则在引用头文件的每 个.c中各分配一次内存空间。

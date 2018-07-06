@@ -1,11 +1,13 @@
-./configure --add-module=/home/zzh/nginx-module-kafka-hight/ --prefix=/usr/local/nginx_kafka4 && make && make install
-make&& make install
+yum install glib2-devel
+
+./configure  --add-module=/home/zzh/nginx-module-kafka-comsume/ --prefix=/usr/local/nginx2 && make && make install
+
 
 curl "http://10.99.1.148:8029/test?name=def&topic_name=abc"
 
 
 注册topic
-curl "http://10.99.1.148:8029/register_topic?topic_name=test2"
+curl "http://10.99.1.148:8029/register_topic?topic_name=test2&set_offset_method=cccc"
 
 https://blog.csdn.net/qinyushuang/article/details/44811519
 http://openplatform-sohu-com.iteye.com/blog/642903
