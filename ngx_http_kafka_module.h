@@ -65,7 +65,7 @@ static void *ngx_http_kafka_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_set_kafka_broker_list(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_set_kafka_topic(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *r);
-void  msg_consume2 (ngx_http_request_t* r, char* info);
+void  msg_consume2 (ngx_http_request_t* r, char* info, int type);
 void ngx_http_kafka_post_callback_handler(ngx_http_request_t *r);
 
 void  rd_kafka_conf_set_default_topic_conf(rd_kafka_conf_t  *rkc,  rd_kafka_topic_conf_t  *rktc); 

@@ -13,3 +13,8 @@ https://blog.csdn.net/qinyushuang/article/details/44811519
 http://openplatform-sohu-com.iteye.com/blog/642903
 https://blog.csdn.net/fly_leopard/article/details/55261011
 
+
+参考php
+http://www.dahouduan.com/2017/09/18/php-consume-kafka/
+https://github.com/arnaud-lb/php-rdkafka
+

@@ -366,7 +366,15 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 	if (rd_kafka_topic_conf_set(topic_conf, "offset.store.method",  "broker",  errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK) {  
 		  fprintf(stderr, "%% %s\n", errstr);  
 		  return -1;  
-	}  
+	}
+	
+	if (rd_kafka_topic_conf_set(topic_conf, "auto.offset.reset", set_offset_method, errstr, sizeof(errstr)) !=  RD_KAFKA_CONF_OK ) {
+		fprintf(stderr, "%% %s\n", errstr);  
+		return -1;  
+	} else {
+		fprintf(stderr, "rd_kafka_conf_set auto.offset.reset %s ok\n", set_offset_method);
+	}
+
 	rd_kafka_conf_set_default_topic_conf(rkc, topic_conf);  
 	rd_kafka_conf_set_rebalance_cb(rkc, rebalance_cb);
 
@@ -453,9 +461,9 @@ static ngx_int_t ngx_http_kafka_handler_register_topic(ngx_http_request_t *reque
 	char s2[100] = {0};
 	char s3[100] = {0};
 	char s4[100] = {0};
-	sprintf(s1, "{\"error_code\":%d", 0);
-	sprintf(s2, "\"error_msg\":%s", "");
-	sprintf(s3, "\"url\":\"/consume?group_name=%s\"", group_name);
+	sprintf(s1, "{\"error_code\":%d,", 0);
+	sprintf(s2, "\"error_msg\":%s,", "\"success\"");
+	sprintf(s3, "\"url\":\"/consume?group_name=%s\",", group_name);
 	sprintf(s4, "\"set_offset_method\":\"%s\"}", set_offset_method);
 	
 	strcat(result, s1);
@@ -588,25 +596,52 @@ void msg_consume (rd_kafka_message_t *rkmessage, void *opaque) {
 		if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
 		//fprintf(stderr," aaaa  Consumer reached end of [%ld] \n",rkmessage->offset);
 		// run =0;
-			msg_consume2(request, "no data, daye");
+			msg_consume2(request, "RD_KAFKA_RESP_ERR__PARTITION_EOF", 1);
 			return;
 		}
 
 		if (rkmessage->rkt)  {
-			msg_consume2(request, "no data, rkt");
+			msg_consume2(request, "no data, rkt", 1);
 			return;
 		} else {
-			msg_consume2(request, "no data, nb");
+			msg_consume2(request, "no data, nb", 1);
 			return;
 		}
 	}
 	
 	res = (char*)rkmessage->payload;
 	fprintf(stderr, "input: %s\n", res);
-	msg_consume2(request, res);
+	msg_consume2(request, res, 0);
 }
 
-void msg_consume2 (ngx_http_request_t* request, char* info) {
+/*
+type int 1 success 2 failure
+*/
+void msg_consume2 (ngx_http_request_t* request, char* info, int type) {
+	
+	char result[1024] = {};
+	char s1[100] = {0};
+	char s2[100] = {0};
+
+	if ( 0 == type){
+		//成功
+		sprintf(result, "{\"data\":\"%s\",", info);
+		sprintf(s1, "\"error_code\":%d,", 0);
+		sprintf(s2, "\"error_msg\":\"%s\"}", "success");
+		
+	} else {
+		//失败
+		sprintf(result, "{\"data\":\"%s\",", "");
+		sprintf(s1, "\"error_code\":%d,", 1);
+		sprintf(s2, "\"error_msg\":\"%s\"}", info);
+		
+	}
+
+	strcat(result, s1);
+	strcat(result, s2);
+	
+	
+	fprintf(stderr, "bbbbb %s\n", result);
 
 	ngx_buf_t	*buf;
 	ngx_chain_t		out;	
@@ -614,14 +649,14 @@ void msg_consume2 (ngx_http_request_t* request, char* info) {
 	buf = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
 	out.buf = buf;
 	out.next = NULL;
-	buf->pos = (u_char *)info;
-	buf->last = (u_char *)info + strlen(info);
+	buf->pos = (u_char *)result;
+	buf->last = (u_char *)result + strlen(result);
 	buf->memory = 1;
 	buf->last_buf = 1;
 
 	ngx_str_set(&(request->headers_out.content_type), "text/html");
 	request->headers_out.status = NGX_HTTP_OK;
-	request->headers_out.content_length_n = strlen(info);
+	request->headers_out.content_length_n = strlen(result);
 	ngx_http_send_header(request);
 
 	if( ngx_http_output_filter(request, &out) ==NGX_OK ) {
@@ -717,11 +752,21 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 			fprintf(stderr, "%s %s\n", ((ngx_http_hello_world_shm_count_t *)shm_zone->data)->multi_rdkafka[i]->group, "from shm ok");
 		} else {
 			fprintf(stderr, "%s\n", "from shm err");
-			char* msg = (char*) malloc(sizeof(char)*50);
-			memset(msg, 0, 50);
-			sprintf(msg, "consume group %s not exists\n", (char*)group_name->data); 
-			msg_consume2(request, msg);
-			free(msg);
+//			char* msg = (char*) malloc(sizeof(char)*50);
+//			memset(msg, 0, 50);
+
+
+			char result[100] = {};
+			char s1[20] = {0};
+
+			sprintf(result, "{\"error_code\":%d,", 1);
+			sprintf(s1, "\"error_msg\":\"consume group %s not exists\"}", (char*)group_name->data);
+			strcat(result, s1);
+
+
+//			sprintf(msg, "consume group %s not exists\n", (char*)group_name->data); 
+			msg_consume2(request, result, 1);
+//			free(msg);
 			return NGX_DONE;
 		}
 
@@ -742,7 +787,7 @@ static ngx_int_t ngx_http_kafka_handler(ngx_http_request_t *request) {
 			msg_consume(rkmessage, request);
 		}  else {
 			fprintf(stderr, "no data, haha \n");
-				msg_consume2(request, "no result msg_consume");
+			msg_consume2(request, "RD_KAFKA_RESP_ERR__PARTITION_EOF", 1);
 		}
 	}
 
