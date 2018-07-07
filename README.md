@@ -5,7 +5,12 @@ a) http://127.0.0.1:81/register_topic?group_name=test_group&topic_name=test&set_
    设置消费组: test_group以及topic: test<br/>
    返回值: <br/>
    ```
-   {"error_code":0,"error_msg":"success","url":"/consume?group_name=test_group","set_offset_method":"largest"}
+   {
+	   "error_code": 0,
+	   "error_msg": "success",
+	   "url": "/consume?group_name=test_group",
+	   "set_offset_method": "largest"
+   }
    ```
    
 b) http://127.0.0.1:81/consume?group_name=test_group<br/>
