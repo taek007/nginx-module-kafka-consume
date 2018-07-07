@@ -43,6 +43,7 @@ http {
         location = /register_topic {
              set $topic_name $arg_topic_name;
              set $group_name $arg_group_name;
+             set $set_offset_method $arg_set_offset_method;
              kafka.register_topic ab;
         }
 
